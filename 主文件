@@ -1,0 +1,103 @@
+import os
+import sys
+import pygame
+from pynput import keyboard
+
+
+# ================== 初始化配置 ==================
+def init_resources():
+    """初始化资源路径和音效库"""
+    # 判断是否被打包
+    if getattr(sys, 'frozen', False):
+        base_dir = sys._MEIPASS  # PyInstaller临时解压目录
+        exe_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        exe_dir = base_dir
+
+    # 定义音效库路径（优先从EXE同级目录加载）
+    sound_lib_dir = os.path.join(exe_dir, "音效库")
+
+    # 检查音效库是否存在
+    if not os.path.exists(sound_lib_dir):
+        print(f"[错误] 音效库未找到！路径: {sound_lib_dir}")
+        return None, None, None
+
+    return base_dir, exe_dir, sound_lib_dir
+
+
+# ================== 加载音效 ==================
+def load_sound_library(sound_lib_dir):
+    """动态加载音效库中的音效文件"""
+    sound_map = {}
+    supported_formats = ('.mp3', '.wav', '.ogg')
+
+    # 遍历音效库目录
+    for filename in os.listdir(sound_lib_dir):
+        filepath = os.path.join(sound_lib_dir, filename)
+        if os.path.isfile(filepath) and filename.lower().endswith(supported_formats):
+            key_name = os.path.splitext(filename)[0].lower()  # 按键名称 = 文件名（不区分大小写）
+            try:
+                sound = pygame.mixer.Sound(filepath)
+                sound_map[key_name] = sound
+                print(f"[加载] 按键 '{key_name}' -> {filename}")
+            except pygame.error as e:
+                print(f"[错误] 无法加载音效 {filename}: {str(e)}")
+
+    return sound_map
+
+
+# ================== 主程序 ==================
+def main():
+    # 初始化资源路径
+    base_dir, exe_dir, sound_lib_dir = init_resources()
+    if not sound_lib_dir:
+        return
+
+    # 初始化音频系统
+    try:
+        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+        if not pygame.mixer.get_init():
+            raise RuntimeError("混音器初始化失败")
+        print("[状态] 音频系统初始化成功")
+    except Exception as e:
+        print(f"[致命错误] 音频初始化失败: {str(e)}")
+        return
+
+    # 加载音效库
+    sound_map = load_sound_library(sound_lib_dir)
+    if not sound_map:
+        print("[错误] 未找到可用音效文件！")
+        return
+
+    # ================== 键盘监听 ==================
+    def on_press(key):
+        try:
+            # 获取标准化按键名称（兼容字符键和特殊键）
+            key_name = key.char.lower() if hasattr(key, 'char') else key.name.lower()
+        except AttributeError:
+            return
+
+        # 播放音效逻辑
+        if key_name in sound_map:
+            try:
+                sound_map[key_name].play()
+                print(f"[触发] 按键 {key_name.upper()}")
+            except Exception as e:
+                print(f"[错误] 播放音效失败: {str(e)}")
+        elif key_name == 'esc':  # ESC键退出
+            return False
+
+    # 启动监听器
+    print("\n======== 键盘音效已启用 ========")
+    print("提示: 按 ESC 键退出程序")
+    with keyboard.Listener(on_press=on_press) as listener:
+        listener.join()
+
+    # 清理资源
+    pygame.mixer.quit()
+    print("\n======== 程序已安全退出 ========")
+
+
+if __name__ == "__main__":
+    main()
